@@ -1,6 +1,6 @@
 # Censored Sampling of Diffusion Models Using 3 Minutes of Human Feedback
 
-This is the codebase for **Censored Sampling of Diffusion Models Using 3 Minutes of Human Feedback**.
+This is the codebase for [**Censored Sampling of Diffusion Models Using 3 Minutes of Human Feedback**](https://arxiv.org/abs/2307.02770).
 
 This repository is based on [openai/guided-diffusion](https://github.com/openai/guided-diffusion) and includes the following features:
 - Implementation of the human feedback framework
