@@ -2,10 +2,24 @@
 
 This is the codebase for [**Censored Sampling of Diffusion Models Using 3 Minutes of Human Feedback**](https://arxiv.org/abs/2307.02770).
 
-This repository is based on [openai/guided-diffusion](https://github.com/openai/guided-diffusion) and includes the following features:
-- Implementation of the human feedback framework
-- Integration of the `latent_guided_diffusion` module, which is derived from [CompVis/latent-diffusion](https://github.com/CompVis/latent-diffusion) with modification to perform guided sampling.
-- Most components used in our experiments related to guidance is based on [arpitbansal297/Universal-Guided-Diffusion](https://github.com/arpitbansal297/Universal-Guided-Diffusion) with some necessary modifications.
+<p align="center">
+<img src="./assets/stable-diffusion-malign-examples.png" width="75%">
+</p>
+
+<center> Fig 1. Examples of malign generation from Stable Diffusion v1.4 (with unexpected embedded text) given the prompt <b>"A photo of a human"</b>. About <i>22%</i> are the malign images. </center>
+
+&nbsp;
+
+<p align="center">
+<img src="./assets/stable-diffusion-censored-samples.png" width="75%">
+</p>
+
+<center> Fig 2. Examples of censored generation (with guidance toward no embedded text, based on human feedback data) from the same model and prompt. About <i>1%</i> are the malign images. </center>
+
+&nbsp;
+
+This repository is based on [openai/guided-diffusion](https://github.com/openai/guided-diffusion), [CompVis/latent-diffusion](https://github.com/CompVis/latent-diffusion) and [CompVis/stable-diffusion](https://github.com/CompVis/stable-diffusion), and provides an implementation of human feedback based guidance framework.
+We integrate ideas and components from [arpitbansal297/Universal-Guided-Diffusion](https://github.com/arpitbansal297/Universal-Guided-Diffusion) for guidance, with some necessary modifications.
 
 
 ## Contents
@@ -14,24 +28,31 @@ This repository is based on [openai/guided-diffusion](https://github.com/openai/
 - [Experiment 2. LSUN Church (censoring stock watermarks)](#experiment-2-lsun-church)
 - [Experiment 3. ImageNet Tench (censoring human faces)](#experiment-3-imagenet-tench)
 - [Experiment 4. LSUN Bedroom (censoring broken images)](#experiment-4-lsun-bedroom)
+- [Experiment 5. Stable Diffusion (censoring prominent embedded texts given a certain prompt) (Beta version)](#experiment-5-stable-diffusion-beta)
 
 
 # Installation
 
 Make sure you have Python version **3.9** installed.
 
-To install the required dependencies, run the following command:
+Run the following commands:
+```
+cd latent_guided_diffusion
+conda env create -f enviroment.yaml
+conda activate ldm
+```
+
+Next, install the `guided_diffusion` package that the scripts depend on:
 
 ```
+cd ..
 pip install -e .
 ```
 
-This will install the `guided_diffusion` python package that the scripts depend on.
-
-You also need to separately install some packages. Run the following command to install them.
+You may need to separately install `cudatoolkit` within the virtual environment (especially if the experiment procedure below produces errors related to `from torch._C import *`):
 
 ```
-pip install torchvision omegaconf einops
+conda install cudatoolkit=11.8 -c pytorch -c nvidia
 ```
 
 
@@ -174,19 +195,7 @@ Note that when `backward_steps` takes a positive value, `NUM_GPUS` should be set
 
 # Experiment 2. LSUN Church
 
-## 2.1 Environment Setup
-
-A seperate environment should be set up for experiments in this section, due to the use of components pertaining to [`latent-diffusion`](https://github.com/CompVis/latent-diffusion) repository.
-
-Setup a conda environment `ldm` using a provided YAML file within the `latent_guided_diffusion` directory:
-```
-cd latent_guided_diffusion
-conda env create -f enviroment.yaml
-conda activate ldm
-```
-
-
-## 2.2 Download pretrained latent diffusion model
+## 2.1 Download pretrained latent diffusion model
 Download the pretrained LDM components from [CompVis/latent-diffusion](https://github.com/CompVis/latent-diffusion).
 
 ### Pretrained Autoencoding Models
@@ -203,9 +212,11 @@ sh scripts/download_church_model.sh
 ```
 The latent diffusion model will be downloaded within `latent_guided_diffusion/models/ldm/lsun_churches256`.
 
-## 2.3 Prepare human feedback data for reward model training
+## 2.2 Prepare human feedback data for reward model training
 
-### 2.3.1 Generate and save baseline samples
+Return to the main working directory `.../diffusion-human-feedback/`.
+
+### 2.2.1 Generate and save baseline samples
 Run the following shell script to generate baseline samples:
 ```sh
 MODEL_FLAGS="--attention_resolutions 32,16,8 --class_cond True --image_size 256 --image_channels 3 --num_channels 256 --learn_sigma True --num_heads 4 --num_res_blocks 2 --resblock_updown True --use_fp16 True --use_scale_shift_norm True"
@@ -222,16 +233,16 @@ echo $(mpiexec -n $NUM_GPUS python scripts/censored_sample.py --log_dir $LOG_DIR
 
 As in [Section 1.3.1](#131-generate-and-save-baseline-samples), the sampling code automatically converts the NPZ sample file into PNG images and saves them.
 
-### 2.3.2 Labeling with GUI
+### 2.2.2 Labeling with GUI
 
 Same as in [Section 1.3.2](#132-provide-human-feedback-on-baseline-samples-using-gui).
 Just change the value input to the `censoring_feature` argument to `shutterstock-watermark` (instead of `strike-through-cross` used in that section) for clarity.
 
-### 2.3.3 Create partial data for ensemble training
+### 2.2.3 Create partial data for ensemble training
 
 Same as in [Section 1.3.3](#133-create-partial-data-for-ensemble-training) except that `num_malign_samples` and `num_benign_samples` should be set to 30, instead of 10.
 
-## 2.4 Train Reward Models
+## 2.3 Train Reward Models
 Run the following shell script to train reward models:
 ```sh
 TRAIN_FLAGS="--augment_lsun False --image_size 256 --rgb True --iterations 601 --anneal_lr True --lr 3e-4 --batch_size 128 --save_interval 200 --weight_decay 0.05" # Change the 'iterations' flag to 1801 for the 'Union' case
@@ -250,7 +261,7 @@ If you set `--isaugment True`, make sure to adjst the `--p_malgin_transfrom` and
 
 To obtain the union reward model, you can change the `feedback_path` to the `union_feedback` pickle file. -->
 
-## 2.5 Perform censored sampling
+## 2.4 Perform censored sampling
 Appropriately modify the following template script to perform censored sampling.
 ```sh
 MODEL_FLAGS="--attention_resolutions 32,16,8 --class_cond True --image_size 256 --image_channels 3 --num_channels 256 --learn_sigma True --num_heads 4 --num_res_blocks 2 --resblock_updown True --use_fp16 True --use_scale_shift_norm True"
@@ -443,18 +454,80 @@ Change `backward_steps` ($B$ in the paper), `optim_lr` (backward guidance learni
 Note that when `backward_steps` takes a positive value, `NUM_GPUS` should be set to `1`.
 
 
-# 5. Appendix
+# Experiment 5. Stable Diffusion (Beta)
 
-## Errors during environment setup regarding `mpi4py`
+## 5.1 Environment setup
+For this experiment, setup an environment compatible with the scripts from [CompVis/stable-diffusion](https://github.com/CompVis/stable-diffusion).
+```
+cd stable-diffusion
+conda env create -f environment.yaml
+conda activate stablediff
+```
 
-1. If you encounter any missing package errors, use `pip` to install those packages until you no longer receive the errors related to the `mpi4py` package.
+One also needs to download the pretrained model weights `sd-v1-4.ckpt` (Stable Diffusion v1.4).
 
-   If installing `mpi4py` using `pip` doesn't work, try:
-   ```sh
-   conda install -c conda-forge mpi4py mpich
-   ```
+## 5.2 Prepare human feedback data for reward model training
 
-2. Once the necessary packages are installed, your environment should be ready to use. Avoid loading the `cuda/1X.X` module when running this repository. If the `module list` command displays `cuda/1X.X`, try unloading it using:
-   ```sh
-   module unload cuda/1X.X
-   ```
+**NOTE**: The sampling script for this experiment is located under  `.../diffusion-human-feedback/stable-diffusion/scripts/` unlike the previous experiments.
+
+Below, we assume that you're staying within `.../diffusion-human-feedback/stable-diffusion`.
+
+### 5.2.1 Generate and save baseline samples
+Generate baseline samples. The example script below generates 4 samples at a time, iterates it 25 times to produce 100 samples and save the results, and repeat the whole thing 5 times (creates 500 images in total). Change the related numbers freely according to your compute budget.
+```sh
+MODEL_PATH="path/to/sd-v1-4.ckpt"
+PROMPT='a photo of a human'
+OUTDIR="path/to/log"
+N_SAMPLES="4"
+N_ITER="25"
+
+for i in {1..5}
+do
+    eval $"python scripts/txt2img_censored.py --prompt "\""$PROMPT"\"" --outdir $OUTDIR --n_samples $N_SAMPLES --n_iter $N_ITER --ckpt $MODEL_PATH"
+done
+```
+
+As before, the sampling code saves both NPZ sample file and PNG image files under `path/to/log`.
+
+### 5.2.2 Labeling with GUI
+
+Same as in [Section 1.3.2](#132-provide-human-feedback-on-baseline-samples-using-gui).
+Just change the value input to the `censoring_feature` argument to `embedded-text`.
+
+### 5.2.3 Create partial data for ensemble training
+
+Same as in [Section 1.3.3](#133-create-partial-data-for-ensemble-training) except that `num_malign_samples` and `num_benign_samples` should be set to 100, instead of 10.
+
+## 5.3 Train Reward Models
+Assuming being in the main working directory `.../diffusion-human-feedback/`, run:
+```sh
+TRAIN_FLAGS="--augment_lsun False --image_size 512 --rgb True --iterations 10001 --anneal_lr True --lr 1e-4 --batch_size 64 --save_interval 1000 --weight_decay 0.05" 
+POS_WEIGHT="0.1" 
+FEEDBACK_PATH="path/to/feedback.pkl"
+LOG_DIR="path/to/log"
+NUM_GPUS="1"
+
+echo $(mpiexec -n $NUM_GPUS python scripts/reward/reward_train_transfer.py --log_dir=$LOG_DIR --pos_weight=$POS_WEIGHT --feedback_path=$FEEDBACK_PATH $TRAIN_FLAGS)   
+```
+
+## 5.4 Perform censored sampling
+
+Again, note that the sampling script is located under  `.../diffusion-human-feedback/stable-diffusion/scripts/`.
+
+```sh
+MODEL_PATH="path/to/sd-v1-4.ckpt"
+PROMPT='a photo of a human'
+OUTDIR="path/to/log"
+N_SAMPLES="4"
+N_ITER="25"
+
+REWARD_PATH_1="path/to/reward/model_1.pt"
+REWARD_PATH_2="path/to/reward/model_2.pt"
+REWARD_PATH_3="path/to/reward/model_3.pt"
+REWARD_PATH_4="path/to/reward/model_4.pt"
+REWARD_PATH_5="path/to/reward/model_5.pt"
+WT="4.0"
+RECURRENCES="4"
+
+eval $"python .../stable-diffusion/scripts/txt2img_censored.py --prompt "\""$PROMPT"\"" --outdir $OUTDIR --n_samples $N_SAMPLES --n_iter $N_ITER --ckpt $MODEL_PATH --use_forward True --forward_guidance_wt $WT --num_recurrences $RECURRENCES --reward_paths $REWARD_PATH_1 $REWARD_PATH_2 $REWARD_PATH_3 $REWARD_PATH_4 $REWARD_PATH_5"
+```

@@ -13,3 +13,5 @@ trash/
 log_dir/
 src/
 
+stable-diffusion/exp
+stable-diffusion/outputs
